@@ -17,8 +17,8 @@ import six
 import dateutil
 
 #Application-specific imports
-import exceptions as RH_exception
-import endpoints
+from . import exceptions as RH_exception
+from . import endpoints
 
 class Bounds(Enum):
     """Enum for bounds in `historicals` endpoint """
@@ -102,9 +102,8 @@ class Robinhood:
         """
 
         self.username = username
-        self.password = password
         payload = {
-            'password': self.password,
+            'password': password,
             'username': self.username,
             'grant_type': 'password',
             'client_id': self.client_id
@@ -120,7 +119,8 @@ class Robinhood:
             raise RH_exception.LoginFailed()
 
         if 'mfa_required' in data.keys():           # pragma: no cover
-            raise RH_exception.TwoFactorRequired()  # requires a second call to enable 2FA
+            mfa_code = input("MFA: ")
+            return self.login(username,password,mfa_code)
 
         if 'access_token' in data.keys() and 'refresh_token' in data.keys():
             self.auth_token = data['access_token']
@@ -230,7 +230,7 @@ class Robinhood:
 
         #Check for validity of symbol
         try:
-            req = requests.get(url, timeout=15)
+            req = self.session.get(url, timeout=15)
             req.raise_for_status()
             data = req.json()
         except requests.exceptions.HTTPError:
@@ -255,7 +255,7 @@ class Robinhood:
         url = str(endpoints.quotes()) + "?symbols=" + ",".join(stocks)
 
         try:
-            req = requests.get(url, timeout=15)
+            req = self.session.get(url, timeout=15)
             req.raise_for_status()
             data = req.json()
         except requests.exceptions.HTTPError:
@@ -623,6 +623,21 @@ class Robinhood:
         instrument_list = self.get_url(endpoints.tags(tag))["instruments"]
         return [self.get_url(instrument)["symbol"] for instrument in instrument_list]
 
+    @login_required
+    def get_transfers(self):
+        """Returns a page of list of transfers made to/from the Bank.
+
+        Note that this is a paginated response. The consumer will have to look
+        at 'next' key in the JSON and make a subsequent request for the next
+        page.
+
+            Returns:
+                (list): List of all transfers to/from the bank.
+        """
+        res = self.session.get(endpoints.ach('transfers'), timeout=15)
+        res.raise_for_status()
+        return res.json()
+
     ###########################################################################
     #                           GET OPTIONS INFO
     ###########################################################################
@@ -681,7 +696,7 @@ class Robinhood:
 
         #Check for validity of symbol
         try:
-            req = requests.get(url, timeout=15)
+            req = self.session.get(url, timeout=15)
             req.raise_for_status()
             data = req.json()
         except requests.exceptions.HTTPError:
@@ -1293,7 +1308,7 @@ class Robinhood:
         if(trigger == 'stop'):
             if(stop_price is None):
                 raise(ValueError('Stop order has no stop_price in call to submit_order'))
-            if(price <= 0):
+            if(stop_price <= 0):
                 raise(ValueError('Stop_price must be positive number in call to submit_order'))
 
         if(stop_price is not None):
